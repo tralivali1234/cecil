@@ -14,7 +14,7 @@ using Mono.Collections.Generic;
 
 namespace Mono.Cecil {
 
-	public interface IAssemblyResolver {
+	public interface IAssemblyResolver : IDisposable {
 		AssemblyDefinition Resolve (AssemblyNameReference name);
 		AssemblyDefinition Resolve (AssemblyNameReference name, ReaderParameters parameters);
 
@@ -28,10 +28,10 @@ namespace Mono.Cecil {
 		MethodDefinition Resolve (MethodReference method);
 	}
 
-#if !PCL
+#if !PCL && !NET_CORE
 	[Serializable]
 #endif
-	public class ResolutionException : Exception {
+	public sealed class ResolutionException : Exception {
 
 		readonly MemberReference member;
 
@@ -62,8 +62,8 @@ namespace Mono.Cecil {
 			this.member = member;
 		}
 
-#if !PCL
-		protected ResolutionException (
+#if !PCL && !NET_CORE
+		ResolutionException (
 			System.Runtime.Serialization.SerializationInfo info,
 			System.Runtime.Serialization.StreamingContext context)
 			: base (info, context)
@@ -296,7 +296,7 @@ namespace Mono.Cecil {
 			return true;
 		}
 
-		private static bool IsVarArgCallTo (MethodDefinition method, MethodReference reference)
+		static bool IsVarArgCallTo (MethodDefinition method, MethodReference reference)
 		{
 			if (method.Parameters.Count >= reference.Parameters.Count)
 				return false;

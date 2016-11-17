@@ -8,7 +8,7 @@
 // Licensed under the MIT/X11 license.
 //
 
-#if !PCL
+#if !PCL && !NET_CORE
 
 using System;
 using System.Collections.Generic;
@@ -36,7 +36,7 @@ namespace Mono.Cecil {
 	}
 
 	[Serializable]
-	public class AssemblyResolutionException : FileNotFoundException {
+	public sealed class AssemblyResolutionException : FileNotFoundException {
 
 		readonly AssemblyNameReference reference;
 
@@ -50,7 +50,7 @@ namespace Mono.Cecil {
 			this.reference = reference;
 		}
 
-		protected AssemblyResolutionException (
+		AssemblyResolutionException (
 			System.Runtime.Serialization.SerializationInfo info,
 			System.Runtime.Serialization.StreamingContext context)
 			: base (info, context)
@@ -339,6 +339,16 @@ namespace Mono.Cecil {
 				Path.Combine (
 					Path.Combine (gac, reference.Name), gac_folder.ToString ()),
 				reference.Name + ".dll");
+		}
+
+		public void Dispose ()
+		{
+			Dispose (true);
+			GC.SuppressFinalize (this);
+		}
+
+		protected virtual void Dispose (bool disposing)
+		{
 		}
 	}
 }

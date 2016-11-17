@@ -122,6 +122,9 @@ namespace Mono.Cecil {
 				if (this.ReturnType.ContainsGenericParameter || base.ContainsGenericParameter)
 					return true;
 
+				if (!HasParameters)
+					return false;
+
 				var parameters = this.Parameters;
 
 				for (int i = 0; i < parameters.Count; i++)
@@ -163,7 +166,12 @@ namespace Mono.Cecil {
 			return this;
 		}
 
-		public virtual MethodDefinition Resolve ()
+		protected override IMemberDefinition ResolveDefinition ()
+		{
+			return this.Resolve ();
+		}
+
+		public new virtual MethodDefinition Resolve ()
 		{
 			var module = this.Module;
 			if (module == null)
