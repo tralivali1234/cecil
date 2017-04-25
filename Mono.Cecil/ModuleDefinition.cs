@@ -966,19 +966,7 @@ namespace Mono.Cecil {
 
 		public ImageDebugHeader GetDebugHeader ()
 		{
-			if (!HasDebugHeader)
-				throw new InvalidOperationException ();
-
-			return Image.DebugHeader;
-		}
-
-		void ProcessDebugHeader ()
-		{
-			if (!HasDebugHeader)
-				return;
-
-			if (!symbol_reader.ProcessDebugHeader (GetDebugHeader ()))
-				throw new InvalidOperationException ();
+			return Image.DebugHeader ?? new ImageDebugHeader ();
 		}
 
 #if !READ_ONLY
@@ -1055,7 +1043,10 @@ namespace Mono.Cecil {
 
 			symbol_reader = reader;
 
-			ProcessDebugHeader ();
+			if (!symbol_reader.ProcessDebugHeader (GetDebugHeader ())) {
+				symbol_reader = null;
+				throw new InvalidOperationException ();
+			}
 
 			if (HasImage && ReadingMode == ReadingMode.Immediate) {
 				var immediate_reader = new ImmediateModuleReader (Image);
@@ -1106,7 +1097,7 @@ namespace Mono.Cecil {
 			Mixin.CheckStream (stream);
 			Mixin.CheckReadSeek (stream);
 
-			return ReadModule (Disposable.NotOwned (stream), "", parameters);
+			return ReadModule (Disposable.NotOwned (stream), stream.GetFileName (), parameters);
 		}
 
 		static ModuleDefinition ReadModule (Disposable<Stream> stream, string fileName, ReaderParameters parameters)
@@ -1142,9 +1133,7 @@ namespace Mono.Cecil {
 			if (!HasImage)
 				throw new InvalidOperationException ();
 
-			var image_stream = Image.Stream.value;
-			image_stream.ZeroStream ();
-			Write (image_stream, parameters);
+			Write (Image.Stream.value, parameters);
 		}
 
 		public void Write (Stream stream)
@@ -1336,12 +1325,6 @@ namespace Mono.Cecil {
 				memory.Write (buffer, 0, read);
 
 			return memory.ToArray ();
-		}
-
-		public static void ZeroStream (this Stream self)
-		{
-			self.Position = 0;
-			self.SetLength (0);
 		}
 
 		public static void Read (object o)
