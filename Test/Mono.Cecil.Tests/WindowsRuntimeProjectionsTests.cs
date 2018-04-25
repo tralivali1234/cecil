@@ -1,4 +1,6 @@
-﻿using NUnit.Framework;
+﻿#if !NET_CORE
+
+using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -63,6 +65,7 @@ namespace Mono.Cecil.Tests {
 			}, verify: false, assemblyResolver: WindowsRuntimeAssemblyResolver.CreateInstance (), applyWindowsRuntimeProjections: true);
 		}
 
+#if !READ_ONLY
 		[Test]
 		public void CanStripType ()
 		{
@@ -90,6 +93,7 @@ namespace Mono.Cecil.Tests {
 				}
 			}, readOnly: true, verify: false, assemblyResolver: assemblyResolver, applyWindowsRuntimeProjections: true);
 		}
+#endif
 	}
 
 	[TestFixture]
@@ -139,3 +143,4 @@ namespace Mono.Cecil.Tests {
 		protected override string [] CustomListTypeNames { get { return new [] { "CustomList" }; } }
 	}
 }
+#endif

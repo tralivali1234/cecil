@@ -87,21 +87,15 @@ namespace Mono.Cecil.PE {
 
 		void GetWin32Resources ()
 		{
-			var rsrc = GetImageResourceSection ();
-			if (rsrc == null)
+			if (!module.HasImage)
 				return;
 
-			win32_resources = module.Image.GetReaderAt (rsrc.VirtualAddress, rsrc.SizeOfRawData, (s, reader) => new ByteBuffer (reader.ReadBytes ((int) s)));
-		}
+			DataDirectory win32_resources_directory = module.Image.Win32Resources;
+			var size = win32_resources_directory.Size;
 
-		Section GetImageResourceSection ()
-		{
-			if (!module.HasImage)
-				return null;
-
-			const string rsrc_section = ".rsrc";
-
-			return module.Image.GetSection (rsrc_section);
+			if (size > 0) {
+				win32_resources = module.Image.GetReaderAt (win32_resources_directory.VirtualAddress, size, (s, reader) => new ByteBuffer (reader.ReadBytes ((int) s)));
+			}
 		}
 
 		public static ImageWriter CreateWriter (ModuleDefinition module, MetadataBuilder metadata, Disposable<Stream> stream)
@@ -197,7 +191,7 @@ namespace Mono.Cecil.PE {
 		void WritePEFileHeader ()
 		{
 			WriteUInt32 (0x00004550);		// Magic
-			WriteUInt16 (GetMachine ());	// Machine
+			WriteUInt16 ((ushort) module.Architecture);	// Machine
 			WriteUInt16 (sections);			// NumberOfSections
 			WriteUInt32 (metadata.timestamp);
 			WriteUInt32 (0);	// PointerToSymbolTable
@@ -209,22 +203,6 @@ namespace Mono.Cecil.PE {
 			if (module.Kind == ModuleKind.Dll || module.Kind == ModuleKind.NetModule)
 				characteristics |= 0x2000;
 			WriteUInt16 (characteristics);	// Characteristics
-		}
-
-		ushort GetMachine ()
-		{
-			switch (module.Architecture) {
-			case TargetArchitecture.I386:
-				return 0x014c;
-			case TargetArchitecture.AMD64:
-				return 0x8664;
-			case TargetArchitecture.IA64:
-				return 0x0200;
-			case TargetArchitecture.ARMv7:
-				return 0x01c4;
-			}
-
-			throw new NotSupportedException ();
 		}
 
 		Section LastSection ()
@@ -240,9 +218,8 @@ namespace Mono.Cecil.PE {
 
 		void WriteOptionalHeaders ()
 		{
-			WriteUInt16 ((ushort) (!pe64 ? 0x10b : 0x20b));	// Magic
-			WriteByte (8);	// LMajor
-			WriteByte (0);	// LMinor
+			WriteUInt16 ((ushort) (!pe64 ? 0x10b : 0x20b)); // Magic
+			WriteUInt16 (module.linker_version);
 			WriteUInt32 (text.SizeOfRawData);	// CodeSize
 			WriteUInt32 ((reloc != null ? reloc.SizeOfRawData : 0)
 				+ (rsrc != null ? rsrc.SizeOfRawData : 0));	// InitializedDataSize
@@ -862,10 +839,10 @@ namespace Mono.Cecil.PE {
 
 		void PatchResourceDataEntry (ByteBuffer resources)
 		{
-			var old_rsrc = GetImageResourceSection ();
 			var rva = resources.ReadUInt32 ();
 			resources.position -= 4;
-			resources.WriteUInt32 (rva - old_rsrc.VirtualAddress + rsrc.VirtualAddress);
+
+			resources.WriteUInt32 (rva - module.Image.Win32Resources.VirtualAddress + rsrc.VirtualAddress);
 		}
 	}
 }

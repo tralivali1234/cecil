@@ -1,4 +1,4 @@
-
+#if !READ_ONLY
 using System.IO;
 using System.Linq;
 
@@ -143,7 +143,7 @@ namespace Mono.Cecil.Tests {
 				Assert.AreEqual (DocumentHashAlgorithm.None, document.HashAlgorithm);
 				Assert.AreEqual (DocumentLanguage.FSharp, document.Language);
 				Assert.AreEqual (DocumentLanguageVendor.Microsoft, document.LanguageVendor);
-			}, readOnly: Platform.OnMono, symbolReaderProvider: typeof(PdbReaderProvider), symbolWriterProvider: typeof(PdbWriterProvider));
+			}, readOnly: Platform.OnMono, symbolReaderProvider: typeof (PdbReaderProvider), symbolWriterProvider: typeof (PdbWriterProvider));
 		}
 
 		[Test]
@@ -151,6 +151,21 @@ namespace Mono.Cecil.Tests {
 		{
 			TestModule ("empty-iterator.dll", module => {
 			}, readOnly: Platform.OnMono, symbolReaderProvider: typeof (PdbReaderProvider), symbolWriterProvider: typeof (PdbWriterProvider));
+		}
+
+		[Test]
+		public void EmptyRootNamespace ()
+		{
+			TestModule ("EmptyRootNamespace.dll", module => {
+			}, readOnly: Platform.OnMono, symbolReaderProvider: typeof (PdbReaderProvider), symbolWriterProvider: typeof (PdbWriterProvider));
+		}
+
+		[Test]
+		public void VisualBasicNamespace ()
+		{
+			TestModule ("AVbTest.exe", module => {
+			}, readOnly: Platform.OnMono, symbolReaderProvider: typeof (PdbReaderProvider), symbolWriterProvider: typeof (PdbWriterProvider));
+
 		}
 
 		[Test]
@@ -339,8 +354,9 @@ namespace Mono.Cecil.Tests {
 
 				var state_machine_scope = move_next.DebugInformation.CustomDebugInformations [0] as StateMachineScopeDebugInformation;
 				Assert.IsNotNull (state_machine_scope);
-				Assert.AreEqual (142, state_machine_scope.Start.Offset);
-				Assert.AreEqual (319, state_machine_scope.End.Offset);
+				Assert.AreEqual (1, state_machine_scope.Scopes.Count);
+				Assert.AreEqual (142, state_machine_scope.Scopes [0].Start.Offset);
+				Assert.AreEqual (319, state_machine_scope.Scopes [0].End.Offset);
 
 				var async_body = move_next.DebugInformation.CustomDebugInformations [1] as AsyncMethodBodyDebugInformation;
 				Assert.IsNotNull (async_body);
@@ -354,7 +370,44 @@ namespace Mono.Cecil.Tests {
 				Assert.AreEqual (98, async_body.Resumes [0].Offset);
 				Assert.AreEqual (227, async_body.Resumes [1].Offset);
 
-				Assert.AreEqual (move_next, async_body.MoveNextMethod);
+				Assert.AreEqual (move_next, async_body.ResumeMethods [0]);
+				Assert.AreEqual (move_next, async_body.ResumeMethods [1]);
+			}, readOnly: Platform.OnMono, symbolReaderProvider: typeof (PdbReaderProvider), symbolWriterProvider: typeof (PdbWriterProvider));
+		}
+
+		[Test]
+		public void ImportsForFirstMethod ()
+		{
+			TestModule ("CecilTest.exe", module => {
+				var type = module.GetType ("CecilTest.Program");
+				var method = type.GetMethod ("Main");
+
+				var debug = method.DebugInformation;
+				var scope = debug.Scope;
+
+				Assert.IsTrue (scope.End.IsEndOfMethod);
+
+				var import = scope.Import;
+
+				Assert.IsNotNull (import);
+				Assert.AreEqual (5, import.Targets.Count);
+
+				var ns = new [] {
+					"System",
+					"System.Collections.Generic",
+					"System.Linq",
+					"System.Text",
+					"System.Threading.Tasks",
+				};
+
+				for (int i = 0; i < import.Targets.Count; i++) {
+					var target = import.Targets [i];
+
+					Assert.AreEqual (ImportTargetKind.ImportNamespace, target.Kind);
+					Assert.AreEqual (ns [i], target.Namespace);
+				}
+
+				Assert.AreEqual ("System", import.Targets [0].Namespace);
 			}, readOnly: Platform.OnMono, symbolReaderProvider: typeof (PdbReaderProvider), symbolWriterProvider: typeof (PdbWriterProvider));
 		}
 
@@ -412,3 +465,4 @@ namespace Mono.Cecil.Tests {
 		}
 	}
 }
+#endif

@@ -170,6 +170,7 @@ namespace Mono.Cecil.Tests {
 			}, verify: false);
 		}
 
+#if !NET_CORE
 		[Test]
 		public void WindowsRuntimeComponentAssembly ()
 		{
@@ -181,7 +182,7 @@ namespace Mono.Cecil.Tests {
 				Assert.IsTrue (module.Assembly.Name.IsWindowsRuntime);
 			}, verify: false, assemblyResolver: resolver);
 		}
-
+#endif
 		[Test]
 		public void DeterministicAssembly ()
 		{
@@ -195,6 +196,7 @@ namespace Mono.Cecil.Tests {
 			});
 		}
 
+#if !READ_ONLY
 		[Test]
 		public void ExternalPdbDeterministicAssembly ()
 		{
@@ -223,5 +225,6 @@ namespace Mono.Cecil.Tests {
 				Assert.IsTrue (header.Entries.Any (e => e.Directory.Type == ImageDebugType.EmbeddedPortablePdb));
 			}, symbolReaderProvider: typeof (EmbeddedPortablePdbReaderProvider), symbolWriterProvider: typeof (EmbeddedPortablePdbWriterProvider));
 		}
+#endif
 	}
 }

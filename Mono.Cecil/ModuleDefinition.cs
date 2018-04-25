@@ -38,6 +38,7 @@ namespace Mono.Cecil {
 		Stream symbol_stream;
 		ISymbolReaderProvider symbol_reader_provider;
 		bool read_symbols;
+		bool throw_symbols_mismatch;
 		bool projections;
 		bool in_memory;
 		bool read_write;
@@ -89,6 +90,11 @@ namespace Mono.Cecil {
 			set { read_symbols = value; }
 		}
 
+		public bool ThrowIfSymbolsAreNotMatching {
+			get { return throw_symbols_mismatch; }
+			set { throw_symbols_mismatch = value; }
+		}
+
 		public bool ReadWrite {
 			get { return read_write; }
 			set { read_write = value; }
@@ -107,6 +113,7 @@ namespace Mono.Cecil {
 		public ReaderParameters (ReadingMode readingMode)
 		{
 			this.reading_mode = readingMode;
+			this.throw_symbols_mismatch = true;
 		}
 	}
 
@@ -238,7 +245,7 @@ namespace Mono.Cecil {
 
 #endif
 
-	public sealed class ModuleDefinition : ModuleReference, ICustomAttributeProvider, IDisposable {
+	public sealed class ModuleDefinition : ModuleReference, ICustomAttributeProvider, ICustomDebugInformationProvider, IDisposable {
 
 		internal Image Image;
 		internal MetadataSystem MetadataSystem;
@@ -260,6 +267,7 @@ namespace Mono.Cecil {
 		TargetArchitecture architecture;
 		ModuleAttributes attributes;
 		ModuleCharacteristics characteristics;
+		internal ushort linker_version = 8;
 		Guid mvid;
 		internal uint timestamp;
 
@@ -276,6 +284,8 @@ namespace Mono.Cecil {
 		Collection<Resource> resources;
 		Collection<ExportedType> exported_types;
 		TypeDefinitionCollection types;
+
+		internal Collection<CustomDebugInformation> custom_infos;
 
 		public bool IsMain {
 			get { return kind != ModuleKind.NetModule; }
@@ -331,7 +341,7 @@ namespace Mono.Cecil {
 			set { characteristics = value; }
 		}
 
-		[Obsolete("Use FileName")]
+		[Obsolete ("Use FileName")]
 		public string FullyQualifiedName {
 			get { return file_name; }
 		}
@@ -369,7 +379,7 @@ namespace Mono.Cecil {
 		internal IReflectionImporter ReflectionImporter {
 			get {
 				if (reflection_importer == null)
-					Interlocked.CompareExchange (ref reflection_importer, new ReflectionImporter (this), null);
+					Interlocked.CompareExchange (ref reflection_importer, new DefaultReflectionImporter (this), null);
 
 				return reflection_importer;
 			}
@@ -378,7 +388,7 @@ namespace Mono.Cecil {
 		internal IMetadataImporter MetadataImporter {
 			get {
 				if (metadata_importer == null)
-					Interlocked.CompareExchange (ref metadata_importer, new MetadataImporter (this), null);
+					Interlocked.CompareExchange (ref metadata_importer, new DefaultMetadataImporter (this), null);
 
 				return metadata_importer;
 			}
@@ -387,13 +397,11 @@ namespace Mono.Cecil {
 
 		public IAssemblyResolver AssemblyResolver {
 			get {
-#if !NET_CORE
 				if (assembly_resolver.value == null) {
 					lock (module_lock) {
 						assembly_resolver = Disposable.Owned (new DefaultAssemblyResolver () as IAssemblyResolver);
 					}
 				}
-#endif
 
 				return assembly_resolver.value;
 			}
@@ -551,6 +559,18 @@ namespace Mono.Cecil {
 			set { entry_point = value; }
 		}
 
+		public bool HasCustomDebugInformations {
+			get {
+				return custom_infos != null && custom_infos.Count > 0;
+			}
+		}
+
+		public Collection<CustomDebugInformation> CustomDebugInformations {
+			get {
+				return custom_infos ?? (custom_infos = new Collection<CustomDebugInformation> ());
+			}
+		}
+
 		internal ModuleDefinition ()
 		{
 			this.MetadataSystem = new MetadataSystem ();
@@ -566,6 +586,7 @@ namespace Mono.Cecil {
 			this.architecture = image.Architecture;
 			this.attributes = image.Attributes;
 			this.characteristics = image.Characteristics;
+			this.linker_version = image.LinkerVersion;
 			this.file_name = image.FileName;
 			this.timestamp = image.Timestamp;
 
@@ -648,7 +669,7 @@ namespace Mono.Cecil {
 		public TypeReference GetType (string fullName, bool runtimeName)
 		{
 			return runtimeName
-				? TypeParser.ParseType (this, fullName)
+				? TypeParser.ParseType (this, fullName, typeDefinitionOnly: true)
 				: GetType (fullName);
 		}
 
@@ -711,28 +732,16 @@ namespace Mono.Cecil {
 
 		internal FieldDefinition Resolve (FieldReference field)
 		{
-#if NET_CORE
-			if (MetadataResolver == null)
-				throw new NotSupportedException ();
-#endif
 			return MetadataResolver.Resolve (field);
 		}
 
 		internal MethodDefinition Resolve (MethodReference method)
 		{
-#if NET_CORE
-			if (MetadataResolver == null)
-				throw new NotSupportedException ();
-#endif
 			return MetadataResolver.Resolve (method);
 		}
 
 		internal TypeDefinition Resolve (TypeReference type)
 		{
-#if NET_CORE
-			if (MetadataResolver == null)
-				throw new NotSupportedException ();
-#endif
 			return MetadataResolver.Resolve (type);
 		}
 
@@ -927,6 +936,19 @@ namespace Mono.Cecil {
 			get { return module_lock; }
 		}
 
+		internal void Read<TItem> (TItem item, Action<TItem, MetadataReader> read)
+		{
+			lock (module_lock) {
+				var position = reader.position;
+				var context = reader.context;
+
+				read (item, reader);
+
+				reader.position = position;
+				reader.context = context;
+			}
+		}
+
 		internal TRet Read<TItem, TRet> (TItem item, Func<TItem, MetadataReader, TRet> read)
 		{
 			lock (module_lock) {
@@ -1033,10 +1055,15 @@ namespace Mono.Cecil {
 				throw new InvalidOperationException ();
 
 			var provider = new DefaultSymbolReaderProvider (throwIfNoSymbol: true);
-			ReadSymbols (provider.GetSymbolReader (this, file_name));
+			ReadSymbols (provider.GetSymbolReader (this, file_name), throwIfSymbolsAreNotMaching: true);
 		}
 
 		public void ReadSymbols (ISymbolReader reader)
+		{
+			ReadSymbols(reader, throwIfSymbolsAreNotMaching: true);
+		}
+
+		public void ReadSymbols (ISymbolReader reader, bool throwIfSymbolsAreNotMaching)
 		{
 			if (reader == null)
 				throw new ArgumentNullException ("reader");
@@ -1045,7 +1072,11 @@ namespace Mono.Cecil {
 
 			if (!symbol_reader.ProcessDebugHeader (GetDebugHeader ())) {
 				symbol_reader = null;
-				throw new InvalidOperationException ();
+
+				if (throwIfSymbolsAreNotMaching)
+					throw new SymbolsNotMatchingException ("Symbols were found but are not matching the assembly");
+
+				return;
 			}
 
 			if (HasImage && ReadingMode == ReadingMode.Immediate) {
@@ -1120,7 +1151,7 @@ namespace Mono.Cecil {
 		{
 			Mixin.CheckParameters (parameters);
 			var file = GetFileStream (fileName, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
-			ModuleWriter.WriteModuleTo (this, Disposable.Owned (file), parameters);
+			ModuleWriter.WriteModule (this, Disposable.Owned (file), parameters);
 		}
 
 		public void Write ()
@@ -1147,7 +1178,7 @@ namespace Mono.Cecil {
 			Mixin.CheckWriteSeek (stream);
 			Mixin.CheckParameters (parameters);
 
-			ModuleWriter.WriteModuleTo (this, Disposable.NotOwned (stream), parameters);
+			ModuleWriter.WriteModule (this, Disposable.NotOwned (stream), parameters);
 		}
 
 #endif
@@ -1208,16 +1239,14 @@ namespace Mono.Cecil {
 		public static void CheckWriteSeek (Stream stream)
 		{
 			if (!stream.CanWrite || !stream.CanSeek)
-				throw new ArgumentException ();
+				throw new ArgumentException ("Stream must be writable and seekable.");
 		}
 
 		public static void CheckReadSeek (Stream stream)
 		{
 			if (!stream.CanRead || !stream.CanSeek)
-				throw new ArgumentException ();
+				throw new ArgumentException ("Stream must be readable and seekable.");
 		}
-
-#if !READ_ONLY
 
 		public static void CheckType (object type)
 		{
@@ -1242,8 +1271,6 @@ namespace Mono.Cecil {
 			if (method == null)
 				throw new ArgumentNullException (Argument.method.ToString ());
 		}
-
-#endif
 
 		public static void CheckParameters (object parameters)
 		{
@@ -1282,6 +1309,9 @@ namespace Mono.Cecil {
 
 		public static TargetRuntime ParseRuntime (this string self)
 		{
+			if (string.IsNullOrEmpty (self))
+				return TargetRuntime.Net_4_0;
+
 			switch (self [1]) {
 			case '1':
 				return self [3] == '0'
